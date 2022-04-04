@@ -59,14 +59,12 @@ class Player:
     def count_card(self) -> int:
         """Подсчет количества очков у игрока"""
         count = 0
+        aces = 0
         for card in self.hand:
             if card.nominal in (CardNominal.Jack, CardNominal.Queen, CardNominal.King):
                 count += 10
             if card.nominal == CardNominal.Ace:
-                if count + 11 > 21:
-                    count += 1
-                else:
-                    count += 11
+                aces += 1
             else:
                 if card.nominal == CardNominal.Two:
                     count += 2
@@ -86,6 +84,11 @@ class Player:
                     count += 9
                 elif card.nominal == CardNominal.Ten:
                     count += 10
+        for i in range(aces):
+            if count + 11 > 21:
+                count += 1
+            else:
+                count += 11
         return count
 
     def get_hand(self) -> list:
