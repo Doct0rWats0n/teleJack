@@ -1,8 +1,15 @@
 from PIL import Image, ImageDraw
 from io import BytesIO
 
-table_path = 'static/imgs/table.jpg'
-positions = [(325, 300), (225, 260), (425, 260), (525, 200), (125, 200)]
+table_path = 'static/imgs/table.png'
+positions = [(40, 40), (290, 40), (540, 40), (790, 40), (1040, 40)]
+
+
+def resize_image(image: Image.Image) -> Image.Image:
+    width, height = image.size
+    o = height/width
+    r_image = image.resize((190, int(190 * o)))
+    return r_image
 
 
 class Board:
@@ -16,6 +23,7 @@ class Board:
     def add_card(self, path_to_card: str) -> bytes:
         """Наносит картинку карты на игровой стол"""
         card = Image.open(path_to_card)
+        card = resize_image(card)
         self.table.paste(card, positions[self.cards_count])
         self.cards_count += 1
         return self.get_table()
@@ -23,6 +31,7 @@ class Board:
     def get_table(self) -> bytes:
         """Выдает картинку в байтах"""
         with BytesIO() as output:
-            self.table.save(output, 'JPEG')
+            #self.table.save(output, 'JPEG')
+            self.table.save(output, 'PNG')
             data = output.getvalue()
         return data
