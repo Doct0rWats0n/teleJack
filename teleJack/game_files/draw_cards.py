@@ -2,19 +2,21 @@ from PIL import Image, ImageDraw
 from io import BytesIO
 
 table_path = 'static/imgs/table.png'
-positions = [(40, 40), (290, 40), (540, 40), (790, 40), (1040, 40)]
+table_image = Image.open(table_path)
+positions = [(40, 35), (290, 35), (540, 35), (790, 35), (1040, 35)]
 
 
 def resize_image(image: Image.Image) -> Image.Image:
     width, height = image.size
     o = height/width
-    r_image = image.resize((190, int(190 * o)))
+    r_image = image.resize((200, int(200 * o)))
     return r_image
 
 
 class Board:
     def __init__(self, start_cards=False):
-        self.table = Image.open(table_path)  # Открывает фотографию с игровым столом
+        #self.table = Image.open(table_path)  # Открывает фотографию с игровым столом
+        self.table = table_image.copy()
         self.cards_count = 0
 
         if start_cards:  # Добавляет карты, если они есть
