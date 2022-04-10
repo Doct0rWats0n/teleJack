@@ -1,17 +1,24 @@
-from .data import get_session, Player, Statistics, start_bet, start_money
+from .data import (
+    get_session, Player, Statistics, PlayerDecks, Decks,
+    start_bet, start_money, everyday_prize
+)
 from teleJack.game_files import States
 
 
 class Controller:
     def __init__(self):
         self.sess = get_session()
+        self.decks = self.get_all_decks()
 
     def add_player(self, player_id: int) -> None:
         """Добавляет игрока в базу данных"""
         new_player = Player(id=player_id)
-        new_stat = Statistics(id=player_id)
+        new_stat = Statistics(player=new_player)
+        new_player_decks = PlayerDecks(player=new_player)
+
         self.sess.add(new_player)
         self.sess.add(new_stat)
+        self.sess.add(new_player_decks)
         self.sess.commit()
 
     def check_if_player_exists(self, player_id: int) -> bool:
@@ -33,10 +40,31 @@ class Controller:
         player = self.sess.query(Player).get(player_id)
         return player
 
+    def get_all_players(self) -> list:
+        players = self.sess.query(Player).all()
+        return players
+
     def get_statistics(self, player_id: int) -> Statistics:
         """Получение объекта Statistics из базы данных"""
         stat = self.sess.query(Statistics).get(player_id)
         return stat
+
+    def get_player_decks(self, player_id: int) -> PlayerDecks:
+        """Получение объекты PlayerDecks из базы данных"""
+        player_decks = self.sess.query(PlayerDecks).get(player_id)
+        return player_decks
+
+    def get_all_decks(self):
+        """Получение всех колод из таблицы Decks"""
+        # НЕОБХОДИМ РЕФАКТОРИНГ
+        # МОЖНО ВМЕСТО ID КАК КЛЮЧ СДЕЛАТЬ NAME КАК КЛЮЧ, ЧТО ГОРАЗДО УДОБНЕЕ
+        decks = self.sess.query(Decks).all()
+        formatted_decks = {
+            deck.id: deck.to_dict(only=(
+                'name', 'description', 'cost'
+            )) for deck in decks
+        }
+        return formatted_decks
 
     def get_user_money(self, player_id: int) -> int:
         """Получение денег, имеющихся у игрока"""
@@ -57,9 +85,56 @@ class Controller:
         self.sess.commit()
         return True
 
+    def add_everyday_bonus(self, player_id: int):  # костыль - можно сделать один метод для всех игроков
+        """Добавляет ежедневный бонус на счет игрока"""
+        player = self.get_player(player_id)
+        player.money_count += everyday_prize
+        self.sess.commit()
+
     def get_player_statistics(self, player_id) -> dict:
+        """Возвращает статистику игрока"""
         stat = self.get_statistics(player_id)
         return stat.get_stat()
+
+    def get_available_decks(self, player_id):
+        """Возвращает доступные игроку колоды"""
+        player_decks = self.get_player_decks(player_id)
+        available = map(int, player_decks.available_decks.split())
+        available = {self.decks[i]['name']: i for i in available}
+        return available
+
+    def get_deck(self, player_id: int):
+        """Возвращает текущую колоду игрока"""
+        player_decks = self.get_player_decks(player_id)
+        deck = self.decks[player_decks.chosen_deck]
+        return deck
+
+    def get_decks_to_buy(self, player_id):
+        """Возвращает некупленные колоды для определенного игрока"""
+        player_decks = self.get_player_decks(player_id)
+        decks = {self.decks[i]: i for i in self.decks if str(i) not in player_decks.available_decks}
+        return decks
+
+    def get_deck_info(self, deck_id: int):
+        """Возвращает информацию о колоде"""
+        return self.decks[deck_id].description, self.decks[deck_id].cost
+
+    def change_deck(self, player_id: int, deck_id: int):
+        """Меняет текущую колоду игрока"""
+        player_deck = self.get_player_decks(player_id)
+        player_deck.chosen_deck = deck_id
+        self.sess.commit()
+
+    def buy_deck(self, player_id: int, deck_id: int):
+        """Обрабатывает покупку новой колоды"""
+        money = self.get_user_money(player_id)
+        cost = self.decks[deck_id]['cost']
+        if money - cost < 0:
+            return False  # Если у игрока недостаточно денег для покупки, возвращает False
+        money -= cost
+        player_decks = self.get_player_decks(player_id)
+        player_decks.available_decks += f' {deck_id}'
+        return True
 
     def change_user_bet(self, player_id: int, new_bet: int) -> str:
         """Смена игровой ставки"""
@@ -101,12 +176,12 @@ class Controller:
             stat.win_game += 1
             stat.blackjack_game += 1
             stat.win_money += money * 1.5
+            money *= 1.25
         else:
             stat.draw_game += 1
 
-        balance = self.get_user_money(player_id)
-        if balance > stat.money_record:
-            stat.money_record = balance
+        if money * 2 > stat.money_record:
+            stat.money_record = int(money * 2)
 
         stat.game_played += 1
         self.sess.commit()

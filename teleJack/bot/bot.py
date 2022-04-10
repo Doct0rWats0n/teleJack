@@ -1,5 +1,8 @@
-from teleJack.orm_db import Controller, global_init, start_bet
-from teleJack.bot import TextGame, ImageGame, BASE_PATH
+from teleJack.orm_db import start_bet, everyday_prize, base
+from teleJack.bot import (
+    TextGame, ImageGame,
+    game_markup, game_type_markup, text_game_markup, img_game_markup
+)
 from teleJack.game_files import draw_statistics, States
 from telegram import (
     Update, InlineKeyboardMarkup, InlineKeyboardButton,
@@ -7,37 +10,17 @@ from telegram import (
 )
 from telegram.ext import (
     Updater, Filters, CallbackContext,
-    CommandHandler, MessageHandler, CallbackQueryHandler
+    CommandHandler, MessageHandler, CallbackQueryHandler, ConversationHandler
 )
+from telegram import Bot as TelegramBot
+from telegram.error import Unauthorized
 from io import BytesIO
-
-global_init(BASE_PATH)
-base = Controller()  # База данных
-
-game_keyboard = [
-    [
-        InlineKeyboardButton(text='Взять', callback_data='take'),
-        InlineKeyboardButton(text='Пас', callback_data='skip')
-     ]
-]
-game_markup = InlineKeyboardMarkup(game_keyboard)  # Основная игровая клавиатура
-
-text_keyboard = [
-    [
-        InlineKeyboardButton(text='Новая игра', callback_data='new_text')
-    ]
-]
-text_game_markup = InlineKeyboardMarkup(text_keyboard)  # Клавиатура для новой игры в текстовом режиме
-
-img_keyboard = [
-    [
-        InlineKeyboardButton(text='Новая игра', callback_data='new_img')
-    ]
-]
-img_game_markup = InlineKeyboardMarkup(img_keyboard)  # Клавиатура для новой игры в графическом режиме
+from typing import Callable
+import schedule
+from threading import Thread
 
 
-def check_exist(func):
+def check_exist(func: Callable) -> Callable:
     """Проверка существования пользователя в базе данных"""
     not_registered_message = '''
 У вас нет игрового профиля.
@@ -67,23 +50,65 @@ class GamePart:
         States.BLACKJACK: 'У вас блэкджек! Вы выиграли!'
     }
 
-    def __init__(self, dp):
-        self.playing = {}  # словарь со всеми играми, проходящими в текущий момент
+    def __init__(self, dp, bot: TelegramBot):
+        self.playing = {}  # Словарь со всеми играми, проходящими в текущий момент
+        self.bot = bot  # Бот. Понадобится для ежедневного начисления бонуса
 
         commands = [
-            ('change_bet', self.change_bet), ('game', self.game)
+            ('game', self.choose_game)
         ]
         handlers = [CommandHandler(i, j) for i, j in commands]
+        bet_conversation = ConversationHandler(
+            entry_points=[CommandHandler('change_bet', self.change_request)],
+            states={
+                1: [MessageHandler(Filters.text & ~Filters.command, self.change_bet)]
+            },
+            fallbacks=[CommandHandler('cancel', self.cancel)]
+        )
+        handlers.append(bet_conversation)
         handlers.append(CallbackQueryHandler(self.query_handler))
         [dp.add_handler(handler) for handler in handlers]
 
+        prize_thread = Thread(target=self.start_scheduler)
+        prize_thread.start()
+
+    def check_playing(func: Callable) -> Callable:
+        """Проверка активного статуса игры у игрока"""
+        def new_func(self, upd: Update, cont: CallbackContext):
+            chat_id = upd.message.chat_id
+            if chat_id in self.playing:
+                upd.message.reply_text('Чтобы совершить это действие, необходимо завершить начатую игру.')
+                return
+            res = func(self, upd, cont)
+            return res
+        return new_func
+
     @check_exist
+    @check_playing
+    def choose_game(self, upd: Update, cont: CallbackContext) -> None:
+        """Выбор режима игры"""
+        upd.message.reply_text('Выберите режим игры.', reply_markup=game_type_markup)
+
+    def everyday_prize_schedule(self):
+        """Каждодневное начисление фиксированного бонуса на счет каждого игрока"""
+        players = base.get_all_players()
+        for player in players:
+            base.add_everyday_bonus(player.id)
+            try:
+                self.bot.send_message(player.id, text=f'Вам начислен ежедневный бонус в размере {everyday_prize}.')
+            except Unauthorized:
+                base.remove_player(player.id)
+
+    def start_scheduler(self):
+        """Запуск каждодневного начисления. Нужно класть в поток"""
+        schedule.every().day.at('00:00').do(self.everyday_prize_schedule)
+        while True:
+            schedule.run_pending()
+
+    @check_playing
     def game(self, upd: Update, cont: CallbackContext) -> None:
-        """Идентифицкация и начало игры"""
+        """Идентификация и начало игры"""
         chat_id = upd.message.chat_id
-        if chat_id in self.playing:
-            upd.message.reply_text('Чтобы начать новую игру, необходимо закончить предыдущую.')
-            return
         res = base.subtract_user_bet(chat_id)  # Вычет игровой ставки для игрока
         if not res:
             upd.message.reply_text('''
@@ -92,32 +117,23 @@ class GamePart:
             ''')
             return
 
-        try:
-            mode = cont.args[0]  # Получение режима игры, выбранного пользователем
-            if mode == 'img':
-                usergame = ImageGame()
-                # Получение игровых колод и счета
-                player_deck, player_score = usergame.get_deck('player'), usergame.get_count('player')
-                dealer_deck, dealer_score = usergame.get_deck('dealer'), usergame.get_count('dealer')
-                # Отправка сообщений с игрой и получение их id
-                dealer_msg = upd.message.reply_photo(photo=dealer_deck, caption=dealer_score)
-                player_msg = upd.message.reply_photo(photo=player_deck, caption=player_score, reply_markup=game_markup)
-            elif mode == 'text':
-                usergame = TextGame()
-                # Получение игровых колод и счета
-                player_deck, player_score = usergame.get_deck('player'), usergame.get_count('player')
-                dealer_deck, dealer_score = usergame.get_deck('dealer'), usergame.get_count('dealer')
-                # Отправка сообщений с игрой и получение их id
-                dealer_msg = upd.message.reply_text(dealer_deck + '\n' + dealer_score)
-                player_msg = upd.message.reply_text(player_deck + '\n' + player_score, reply_markup=game_markup)
-            else:
-                raise ValueError  # Вызывает ошибку, если пользователь неверно указал режим
-        except ValueError:
-            upd.message.reply_text('Неправильно выбран режим игры')
-            return
-        except IndexError:
-            upd.message.reply_text('Неправильное использование команды.')
-            return
+        mode = cont.args[0]  # Получение режима игры, выбранного пользователем
+        if mode == 'img':
+            usergame = ImageGame()
+            # Получение игровых колод и счета
+            player_deck, player_score = usergame.get_deck('player'), usergame.get_count('player')
+            dealer_deck, dealer_score = usergame.get_deck('dealer'), usergame.get_count('dealer')
+            # Отправка сообщений с игрой и получение их id
+            dealer_msg = upd.message.reply_photo(photo=dealer_deck, caption=dealer_score)
+            player_msg = upd.message.reply_photo(photo=player_deck, caption=player_score, reply_markup=game_markup)
+        else:
+            usergame = TextGame()
+            # Получение игровых колод и счета
+            player_deck, player_score = usergame.get_deck('player'), usergame.get_count('player')
+            dealer_deck, dealer_score = usergame.get_deck('dealer'), usergame.get_count('dealer')
+            # Отправка сообщений с игрой и получение их id
+            dealer_msg = upd.message.reply_text(dealer_deck + '\n' + dealer_score)
+            player_msg = upd.message.reply_text(player_deck + '\n' + player_score, reply_markup=game_markup)
 
         player_id, dealer_id = player_msg.message_id, dealer_msg.message_id
         self.playing[chat_id] = {'player': player_id, 'dealer': dealer_id, 'game': usergame}
@@ -151,11 +167,11 @@ class GamePart:
                                           reply_markup=game_markup)
 
         # Если у игрока полная рука, симулирует пропуск хода
-        if usergame.is_player_hand_full():
-            self.skip(upd, cont)
         # Если у игрока перебор, заканчивает игру
-        elif usergame.get_state('player') == 'MORE':
+        if usergame.get_state('player') == 'MORE':
             self.count_results(upd, cont)
+        elif usergame.is_player_hand_full():
+            self.skip(upd, cont)
 
     def skip(self, upd: Update, cont: CallbackContext) -> None:
         """Реализация пропуска хода"""
@@ -195,22 +211,39 @@ class GamePart:
         base.game_result(chat_id, res)
         del self.playing[chat_id]
 
-    @check_exist
-    def change_bet(self, upd: Update, cont: CallbackContext) -> None:
-        """Смена игровой ставки"""
+    def change_bet(self, upd: Update, cont: CallbackContext) -> ConversationHandler.END:
+        """Обновление пользовательской ставки. Вызывается из change_request"""
         chat_id = upd.message.chat_id
-        # Если игра уже идет, ставку изменить нельзя
         if chat_id in self.playing:
             upd.message.reply_text('Нельзя менять ставку во время игры.')
-            return
+            return ConversationHandler.END
+
         try:
-            new_bet = int(cont.args[0])
+            new_bet = int(upd.message.text)
             mess = base.change_user_bet(chat_id, new_bet)
             if not mess:
-                mess = 'Ваша ставка успешно изменена.'
-        except (IndexError, TypeError, ValueError):
-            mess = 'Неверное использование команды.'
+                mess = 'Ставка успешно изменена.'
+        except (TypeError, ValueError):
+            upd.message.reply_text('Неверные данные. Введите целое число.')
+            return 1
         upd.message.reply_text(mess)
+        return ConversationHandler.END
+
+    def change_request(self, upd: Update, cont: CallbackContext) -> int:
+        """Запрос на изменени игровой ставки"""
+        chat_id = upd.message.chat_id
+        if chat_id in self.playing:
+            upd.message.reply_text('Нельзя менять ставку во время игры.')
+            return ConversationHandler.END
+        upd.message.reply_text(
+            f'Введите целое число для изменения ставки (минимум - {start_bet}. Для отмены введите /cancel'
+        )
+        return 1
+
+    def cancel(self, upd: Update, cont: CallbackContext) -> ConversationHandler.END:
+        """Отмена изменения ставки. Вызывается после вызова change_request"""
+        upd.message.reply_text('Операция отменена.')
+        return ConversationHandler.END
 
     def clear_message(self, cont: CallbackContext, chat_id: int, mes_id: int) -> None:
         """Удаляет клавиатуру у сообщения с завершенной игрой"""
@@ -221,22 +254,50 @@ class GamePart:
         query = upd.callback_query
         query.answer()
 
-        if query.data == 'take':
+        if query.data == 'take':  # Взять карту
             self.take(query, cont)
-        elif query.data == 'skip':
+        elif query.data == 'skip':  # Пропустить ход
             self.skip(query, cont)
-        elif query.data == 'new_text':
+        elif query.data == 'new_text':  # Новая игра в текстовом режиме
             cont.args = ['text']
             self.game(query, cont)
-        elif query.data == 'new_img':
+        elif query.data == 'new_img':  # Новая игра в графическом режиме
             cont.args = ['img']
             self.game(query, cont)
+
+
+class ShopPart:
+    """
+    Класс, ответственный за функционал магазина карт
+    """
+    def __init__(self, dp):
+        commands = [
+            ()
+        ]
+        handlers = [CommandHandler(i, j) for i, j in commands]
+        [dp.add_handler(handler) for handler in handlers]
+
+    def start_shop(self, upd: Update, cont: CallbackContext):
+        pass
 
 
 class MainPart:
     """
     Основной функционал бота
     """
+    help_text = f"""
+Мои команды:
+    /game - выбрать режим игры и сыграть партию (режим можно сменить после завершения партии);
+    /money - вывести средства на счете;
+    /bet  - вывести игровую ставку (по умолчанию {start_bet});
+    /change_bet - изменить игровую ставку (не должна быть меньше {start_bet} и превышать баланс средств);
+    /stat - вывести статистику игрока за все время;
+    /help - вывести эту подсказку.
+
+По вопросам и багрепортам:
+    @another_conformist / @irealized
+    """
+
     def __init__(self, dp):
         commands = [
             ('bet', self.get_bet), ('money', self.get_money), ('stat', self.get_stat),
@@ -273,19 +334,7 @@ class MainPart:
 
     def help_message(self, upd: Update, cont: CallbackContext) -> None:
         """Получение сообщения-подсказки"""
-        message = f'''
-Мои команды:
-    /game *режим* - начать игру (предыдущая игра должна быть завершена). Режимы - img и text
-    /money - вывести средства на счете
-    /bet  - вывести игровую ставку (по умолчанию {start_bet}
-    /change_bet *число* - изменить игровую ставку (не должна быть меньше {start_bet} и превышать баланс средств
-    /stat - вывести статистику игрока за все время
-    /help - вывести эту подсказку
-
-По вопросам и багрепортам:
-    @another_conformist / @irealized
-        '''
-        upd.message.reply_text(message)
+        upd.message.reply_text(self.help_text)
 
     def wrong_command(self, upd: Update, cont: CallbackContext) -> None:
         """Обработчик нераспознаваемой команды игрока"""
@@ -296,27 +345,14 @@ class MainPart:
         Команда для создания профиля игрока в базе
 
         Вызывается лишь один раз для создания профиля
-        Обязательна должна быть первой командой, введенной игроком
+        Обязательно должна быть первой командой, введенной игроком
         """
         chat_id = upd.message.chat_id
         if base.check_if_player_exists(chat_id):
             message = 'Для игры введите команду /game\nЧтобы вывести справку, введите /help'
             upd.message.reply_text(message)
             return
-        message = f'''
-Привет! Я - телеграм бот, устраивающий партии в блэкджек.
-
-Мои команды:
-    /money - вывести средства на счете.
-    /bet  - вывести игровую ставку (по умолчанию {start_bet}.
-    /change_bet *число* - изменить игровую ставку.
-    Ставка не должна быть меньше {start_bet} и превышать баланс средств.
-    /stat - вывести статистику игрока за все время.
-    /help - вывести эту подсказку.
-
-По вопросам и багрепортам:
-    @another_conformist / @irealized
-        '''
+        message = 'Привет! Я - телеграм бот, устраивающий партии в блэкджек.' + self.help_text
         base.add_player(chat_id)
         upd.message.reply_text(message)
 
@@ -331,9 +367,8 @@ class Bot:
     def start_bot(self) -> None:
         """Запуск бота"""
         upd = Updater(self.token, use_context=True)
-
         dp = upd.dispatcher
-        GamePart(dp)
+        GamePart(dp, upd.bot)
         MainPart(dp)
 
         upd.start_polling()

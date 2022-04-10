@@ -1,7 +1,7 @@
 from PIL import Image, ImageDraw
 from io import BytesIO
 
-table_path = 'static/imgs/table.png'
+table_path = 'teleJack/static/imgs/table.png'
 table_image = Image.open(table_path)
 positions = [(40, 35), (290, 35), (540, 35), (790, 35), (1040, 35)]
 
