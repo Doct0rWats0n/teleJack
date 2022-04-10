@@ -18,7 +18,7 @@ text_nominal = {
 
 
 def check_player_dealer(func):
-    """Проверка правильность передаваемого аргумента"""
+    """Проверка правильности передаваемого аргумента"""
     def new_func(self, who):
         if who not in ['player', 'dealer']:
             raise ValueError(f'Неверный аргумент: {who}')
@@ -114,7 +114,7 @@ class ImageGame(StandardGame):
 
     def get_path_to_cards(self, cards: list) -> list:
         """Получение пути до картинок переданных карт"""
-        paths = [f'static/cards/{card_pack}/{card.suit.name}/{card.nominal.name}.png' for card in cards]
+        paths = [f'teleJack/static/cards/{card_pack}/{card.suit.name}/{card.nominal.name}.png' for card in cards]
         return paths
 
     @check_player_dealer

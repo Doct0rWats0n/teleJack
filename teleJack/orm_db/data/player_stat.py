@@ -2,7 +2,6 @@ from .db_session import SqlAlchemyBase
 from .player import Player
 import sqlalchemy
 from sqlalchemy import orm
-from . import start_values
 
 
 class Statistics(SqlAlchemyBase):
