@@ -1,5 +1,10 @@
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
+from teleJack.logging import init_log
+
+
+statistic_image = Image.open('teleJack/static/imgs/stat_good.jpg')
+statistic_font = ImageFont.truetype('teleJack/static/fonts/font.ttf', 110)
 
 
 def draw_statistics(stat: dict, photo: bytes, player_name: str = 'Anonymous') -> bytes:
@@ -7,12 +12,12 @@ def draw_statistics(stat: dict, photo: bytes, player_name: str = 'Anonymous') ->
     max_len = get_max_strings_len(stat)
     formatted_strings = get_formatted_strings(stat, max_len)
 
-    img = Image.open('teleJack/static/imgs/stat_good.jpg')
+    img = statistic_image
     img2 = Image.open(photo)
     new_img = ImageDraw.Draw(img)
     x, y = 50, 110
     start_position = 500
-    font = ImageFont.truetype('teleJack/static/fonts/font.ttf', y)
+    font = statistic_font
     line_width, line_space = 8, 12
     line_length = max_len * (y / 1.618)
 

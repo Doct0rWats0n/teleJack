@@ -1,5 +1,7 @@
+import random
+
 from teleJack.game_files import Game
-from teleJack.game_files import Board
+from teleJack.game_files import Board, table_images_from_url
 from teleJack.bot import States
 
 
@@ -88,10 +90,15 @@ class ImageGame(StandardGame):
     """
     Класс для проведения игры в графическом режиме
     """
-    def __init__(self):
+    def __init__(self, table_from_url=False):
         super().__init__()
-        self.player_board = Board(self.get_path_to_cards(self.game.player.get_hand()))
-        self.dealer_board = Board(self.get_path_to_cards(self.game.dealer.get_hand()))
+        if not table_from_url:
+            self.player_board = Board(self.get_path_to_cards(self.game.player.get_hand()))
+            self.dealer_board = Board(self.get_path_to_cards(self.game.dealer.get_hand()))
+        else:
+            table = random.choice(table_images_from_url)
+            self.player_board = Board(self.get_path_to_cards(self.game.player.get_hand()), table=table)
+            self.dealer_board = Board(self.get_path_to_cards(self.game.dealer.get_hand()), table=table)
 
     def add_card(self) -> bool:
         """
