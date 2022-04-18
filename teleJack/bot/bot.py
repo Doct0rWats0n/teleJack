@@ -100,7 +100,7 @@ class GamePart:
                 base.remove_player(player.id)
 
     def start_scheduler(self):
-        """Запуска каждодневного начисления. Нужно класть в поток"""
+        """Запуск каждодневного начисления. Нужно класть в поток"""
         schedule.every().day.at('00:00').do(self.everyday_prize_schedule)
         while True:
             schedule.run_pending()

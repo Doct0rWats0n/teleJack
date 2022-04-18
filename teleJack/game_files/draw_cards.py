@@ -1,4 +1,3 @@
-import random
 from PIL import Image, ImageDraw
 from io import BytesIO
 import requests
