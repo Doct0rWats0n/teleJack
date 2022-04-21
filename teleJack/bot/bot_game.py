@@ -90,7 +90,7 @@ class ImageGame(StandardGame):
     """
     Класс для проведения игры в графическом режиме
     """
-    def __init__(self, table_from_url=False):
+    def __init__(self, table_from_url=True):
         super().__init__()
         if not table_from_url:
             self.player_board = Board(self.get_path_to_cards(self.game.player.get_hand()))
