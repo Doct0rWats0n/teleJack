@@ -12,6 +12,7 @@ class Player(SqlAlchemyBase):
     id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
     money_count = sqlalchemy.Column(sqlalchemy.Integer, default=start_money)
     game_bet = sqlalchemy.Column(sqlalchemy.Integer, default=start_bet)
+    image_mode = sqlalchemy.Column(sqlalchemy.Integer, default=0)
     register_date = sqlalchemy.Column(sqlalchemy.DateTime, default=datetime.now)
 
     statistics = orm.relation('Statistics', back_populates='player')

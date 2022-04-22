@@ -5,7 +5,6 @@ from teleJack.game_files import Board, table_images_from_url
 from teleJack.bot import States
 
 
-card_pack = 'standard'
 text_suit = {
     'Spades': '♠',
     'Diamonds': '♦',
@@ -90,8 +89,9 @@ class ImageGame(StandardGame):
     """
     Класс для проведения игры в графическом режиме
     """
-    def __init__(self, table_from_url=True):
+    def __init__(self, card_pack='standard', table_from_url=True):
         super().__init__()
+        self.card_pack = card_pack
         if not table_from_url:
             self.player_board = Board(self.get_path_to_cards(self.game.player.get_hand()))
             self.dealer_board = Board(self.get_path_to_cards(self.game.dealer.get_hand()))
@@ -121,7 +121,7 @@ class ImageGame(StandardGame):
 
     def get_path_to_cards(self, cards: list) -> list:
         """Получение пути до картинок переданных карт"""
-        paths = [f'teleJack/static/cards/{card_pack}/{card.suit.name}/{card.nominal.name}.png' for card in cards]
+        paths = [f'teleJack/static/cards/{self.card_pack}/{card.suit.name}/{card.nominal.name}.png' for card in cards]
         return paths
 
     @check_player_dealer

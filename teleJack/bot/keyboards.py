@@ -33,8 +33,8 @@ game_type_keyboard = [
 ]
 game_type_markup = InlineKeyboardMarkup(game_type_keyboard)
 
+data = [(base.decks[i]['name'], i) for i in base.decks]
 shop_start_keyboard = [
-    [
-        InlineKeyboardButton('<-Назад', callback_data='back')
-    ]
+    [InlineKeyboardButton(text=j, callback_data=f'show_{k}') for j, k in data[i: i + 3]] for i in range(0, len(data), 3)
 ]
+shop_start_markup = InlineKeyboardMarkup(shop_start_keyboard)

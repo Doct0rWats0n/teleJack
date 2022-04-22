@@ -56,8 +56,6 @@ class Controller:
 
     def get_all_decks(self):
         """Получение всех колод из таблицы Decks"""
-        # НЕОБХОДИМ РЕФАКТОРИНГ
-        # МОЖНО ВМЕСТО ID КАК КЛЮЧ СДЕЛАТЬ NAME КАК КЛЮЧ, ЧТО ГОРАЗДО УДОБНЕЕ
         decks = self.sess.query(Decks).all()
         formatted_decks = {
             deck.id: deck.to_dict(only=(
@@ -75,6 +73,11 @@ class Controller:
         """Получение ставки игрока"""
         player = self.get_player(player_id)
         return player.game_bet
+
+    def get_user_image_mode(self, player_id: int):
+        """Получение режима подбора картинок"""
+        player = self.get_player(player_id)
+        return player.image_mode
 
     def subtract_user_bet(self, player_id: int) -> bool:
         """Вычитание ставки из денег игрока в начале игры"""
@@ -100,14 +103,13 @@ class Controller:
         """Возвращает доступные игроку колоды"""
         player_decks = self.get_player_decks(player_id)
         available = map(int, player_decks.available_decks.split())
-        available = {self.decks[i]['name']: i for i in available}
+        available = {i: self.decks[i] for i in available}
         return available
 
-    def get_deck(self, player_id: int):
+    def get_current_deck(self, player_id: int):
         """Возвращает текущую колоду игрока"""
         player_decks = self.get_player_decks(player_id)
-        deck = self.decks[player_decks.chosen_deck]
-        return deck
+        return player_decks.chosen_deck
 
     def get_decks_to_buy(self, player_id):
         """Возвращает некупленные колоды для определенного игрока"""
@@ -117,7 +119,7 @@ class Controller:
 
     def get_deck_info(self, deck_id: int):
         """Возвращает информацию о колоде"""
-        return self.decks[deck_id].description, self.decks[deck_id].cost
+        return self.decks[deck_id]['description'], self.decks[deck_id]['cost']
 
     def change_deck(self, player_id: int, deck_id: int):
         """Меняет текущую колоду игрока"""
@@ -129,7 +131,7 @@ class Controller:
         """Обрабатывает покупку новой колоды"""
         money = self.get_user_money(player_id)
         cost = self.decks[deck_id]['cost']
-        if money - cost < 0:
+        if money < cost:
             return False  # Если у игрока недостаточно денег для покупки, возвращает False
         money -= cost
         player_decks = self.get_player_decks(player_id)
@@ -144,6 +146,12 @@ class Controller:
         elif new_bet < start_bet:
             return f'Новая ставка меньше минимальной (минимальная - {start_bet})'
         player.game_bet = new_bet
+        self.sess.commit()
+
+    def change_user_image_mode(self, player_id: int, mode: int):
+        """Меняет режим подбора картинок"""
+        player = self.get_player(player_id)
+        player.image_mode = mode
         self.sess.commit()
 
     def update_user_money(self, player_id: int, operation: str) -> None:
