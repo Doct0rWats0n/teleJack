@@ -1,6 +1,5 @@
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
-from teleJack.logging import init_log
 
 
 statistic_image = Image.open('teleJack/static/imgs/stat_good.jpg')
