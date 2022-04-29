@@ -99,6 +99,7 @@ class ImageGame(StandardGame):
             table = random.choice(table_images_from_url)
             self.player_board = Board(self.get_path_to_cards(self.game.player.get_hand()), table=table)
             self.dealer_board = Board(self.get_path_to_cards(self.game.dealer.get_hand()), table=table)
+        self.dealer_board.add_card_shirt(f'teleJack/static/cards/{card_pack}/back.png')
 
     def add_card(self) -> bool:
         """

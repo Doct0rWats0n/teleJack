@@ -119,7 +119,7 @@ class Controller:
 
     def get_deck_info(self, deck_id: int):
         """Возвращает информацию о колоде"""
-        return self.decks[deck_id]['description'], self.decks[deck_id]['cost']
+        return self.decks[deck_id]['name'], self.decks[deck_id]['description'], self.decks[deck_id]['cost']
 
     def change_deck(self, player_id: int, deck_id: int):
         """Меняет текущую колоду игрока"""

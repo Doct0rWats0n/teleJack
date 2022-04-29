@@ -3,7 +3,7 @@ from teleJack.bot import (
     TextGame, ImageGame,
     game_markup, game_type_markup, text_game_markup, img_game_markup, shop_start_markup
 )
-from teleJack.game_files import draw_statistics, States
+from teleJack.game_files import draw_statistics, States, get_preview, shop_menu
 from telegram import (
     Update, InlineKeyboardMarkup, InlineKeyboardButton,
     ReplyKeyboardRemove, InputMediaPhoto
@@ -83,6 +83,7 @@ class GamePart:
 
     def check_playing(func: Callable) -> Callable:
         """Проверка активного статуса игры у игрока"""
+
         def new_func(self, upd: Update, cont: CallbackContext):
             chat_id = upd.message.chat_id
             if chat_id in self.playing:
@@ -90,6 +91,7 @@ class GamePart:
                 return
             res = func(self, upd, cont)
             return res
+
         return new_func
 
     @check_exist
@@ -308,8 +310,8 @@ class ShopPart:
     """
     Класс, ответственный за функционал магазина карт
     """
+
     def __init__(self, dp, bot: TelegramBot):
-        self.last_message = {}  # Словарь с id-шниками последних сообщений для магазина
         self.bot = bot  # Бот
         commands = [
             ('shop', self.start_shop), ('change_deck', self.change_deck_command)
@@ -319,41 +321,44 @@ class ShopPart:
 
     @check_exist
     def start_shop(self, upd: Update, cont: CallbackContext):
-        chat_id = upd.message.chat_id
-        if chat_id in self.last_message:
-            self.bot.edit_message_reply_markup(
-                chat_id=chat_id, message_id=self.last_message[chat_id]
-            )
-        mes = upd.message.reply_text(
-            text='Выберите один из вариантов нового дизайна карт.', reply_markup=shop_start_markup
+        """Запуск магазина"""
+        upd.message.reply_photo(
+            photo=shop_menu, caption='Выберите пак с дизайном карт.', reply_markup=shop_start_markup
         )
-        self.last_message[chat_id] = mes.message_id
 
     @check_exist
     def change_deck_command(self, upd: Update, cont: CallbackContext) -> None:
+        """Смена текущей колоды на одну из имеющихся в коллекции пользователя"""
         chat_id = upd.message.chat_id
         player_decks = base.get_available_decks(chat_id)
         data = [(player_decks[i]['name'], i) for i in player_decks]
         decks_keyboard = [
-            [InlineKeyboardButton(text=j, callback_data=f'change_{k}') for j, k in data[i: i + 3]] for i in range(0, len(data), 3)
+            [InlineKeyboardButton(text=j, callback_data=f'change_{k}') for j, k in data[i: i + 3]] for i in
+            range(0, len(data), 3)
         ]
         decks_markup = InlineKeyboardMarkup(decks_keyboard)
         upd.message.reply_text('Доступные колоды для выбора.', reply_markup=decks_markup)
 
-    def show_deck(self, upd: Update, deck_id):
+    def show_deck(self, upd: Update, deck_id: int):
+        """Показ игровой колоды для покупки"""
         chat_id = upd.message.chat_id
-        desc, cost = base.get_deck_info(deck_id)
+        name, desc, cost = base.get_deck_info(deck_id)
+        deck_pic = get_preview(name)
         show_mess = desc + f'\n\nСтоимость: {cost}'
         show_keyboard = [
             [InlineKeyboardButton(text='Купить', callback_data=f'buy_{deck_id}'),
              InlineKeyboardButton(text='<-Назад', callback_data='back')]
         ]
         show_markup = InlineKeyboardMarkup(show_keyboard)
-        self.bot.edit_message_text(
-            chat_id=chat_id, message_id=self.last_message[chat_id], text=show_mess, reply_markup=show_markup
+        self.bot.edit_message_media(
+            chat_id=chat_id, message_id=upd.message.message_id, media=InputMediaPhoto(deck_pic)
+        )
+        self.bot.edit_message_caption(
+            chat_id=chat_id, message_id=upd.message.message_id, caption=show_mess, reply_markup=show_markup
         )
 
-    def buy_new_deck(self, upd: Update, deck_id) -> None:
+    def buy_new_deck(self, upd: Update, deck_id: int) -> None:
+        """Обработка покупки новой игровой колоды"""
         chat_id = upd.message.chat_id
         available = base.get_available_decks(chat_id)
         if deck_id in available:
@@ -365,7 +370,7 @@ class ShopPart:
         else:
             upd.message.reply_text('Колода приобретена.')
 
-    def change_user_deck(self, upd: Update, deck_id) -> None:
+    def change_user_deck(self, upd: Update, deck_id: int) -> None:
         chat_id = upd.message.chat_id
         current_deck = base.get_current_deck(chat_id)
         if current_deck == deck_id:
@@ -373,6 +378,17 @@ class ShopPart:
         else:
             base.change_deck(chat_id, deck_id)
             upd.message.reply_text('Колода успешно изменена.')
+
+    def go_back(self, upd: Update, cont: CallbackContext):
+        chat_id = upd.message.chat_id
+        self.bot.edit_message_media(
+            chat_id=chat_id, message_id=upd.message.message_id,
+            media=InputMediaPhoto(shop_menu)
+        )
+        self.bot.edit_message_caption(
+            chat_id=chat_id, message_id=upd.message.message_id,
+            caption='Выберите один из вариантов нового дизайна карт.', reply_markup=shop_start_markup
+        )
 
     def shop_query_handler(self, query: Update, cont: CallbackContext) -> None:
         """Обработчик кнопок при покупке паков карт"""
@@ -386,11 +402,7 @@ class ShopPart:
             value = int(query.data[query.data.find('_') + 1:])
             self.change_user_deck(query, value)
         elif query.data == 'back':
-            chat_id = query.message.chat_id
-            self.bot.edit_message_text(
-                chat_id=chat_id, message_id=self.last_message[chat_id],
-                text='Выберите один из вариантов нового дизайна карт.', reply_markup=shop_start_markup
-            )
+            self.go_back(query, cont)
 
 
 class MainPart:
@@ -404,12 +416,14 @@ class MainPart:
     /bet  - вывести игровую ставку (по умолчанию {start_bet});
     /change_bet - изменить игровую ставку (не должна быть меньше {start_bet} и превышать баланс средств);
     /stat - вывести статистику игрока за все время;
-    /help - вывести эту подсказку.
-    
+    /help - вывести эту подсказку;
+    /shop - магазин, в котором можно приобрести новый дизайн карт;
+    /change_deck - смена игровой колоды.
+
     При игре в графическом режиме можно поставить подбор случайной картинки для фона.
     Всего есть два варианта - 0 (выключен), 1 (включен)
     /change_mode - меняет режим подбора.
-    
+
 
 По вопросам и багрепортам:
     @another_conformist / @irealized
@@ -478,6 +492,7 @@ class Bot:
     """
     Класс главного бота
     """
+
     def __init__(self, token):
         self.token = token
 
